@@ -1,26 +1,33 @@
-import { v4 as uuidv4 } from 'uuid'
+const { PrismaClient } = require("@prisma/client"); 
+const prisma = new PrismaClient();
 
-let videos = []
-
-
-export const uploadVideo = (req,res)=>{
-    const file = req.file
-    if(!file){
-        return res.status(400).json({message: "No file uploaded"})
+const uploadVideo = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
     }
-    const metaData = {
-        id:uuidv4(),
-        title: file.originalname,
-        path: file.path,
-        size: file.size,
-        mimeType: file.mimetype,
+
+    const fileUrl = `/uploads/${req.file.filename}`;
+
+
+    const video = await prisma.video.create({
+      data: {
+        title: req.file.originalname,
+        path: fileUrl,
+        size: req.file.size,
+        mimeType: req.file.mimetype,
         status: "uploaded",
+      },
+    });
 
-    }
+    res.status(201).json({
+      message: "Video uploaded and saved to database!",
+      video,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Something went wrong" });
+  }
+};
 
-    videos.push(metaData)
-    return res.status(200).json({
-        message: "File uploaded successfully",
-        data: metaData
-    })
-}
+module.exports = { uploadVideo };

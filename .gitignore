@@ -56,4 +56,9 @@ yarn-error.log*
 /tmp
 /temp
 /cache
-*.log
+*.lock
+
+src/generated/
+src/uploads/
+*.dll.node
+docker-data/
