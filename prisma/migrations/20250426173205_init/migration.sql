@@ -10,3 +10,4 @@ CREATE TABLE "Video" (
 
     CONSTRAINT "Video_pkey" PRIMARY KEY ("id")
 );
+    
