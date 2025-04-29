@@ -2,7 +2,8 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const {ffmpeg }= require("../configs/ffmpeg")
 const path = require("path");
-
+const fs = require("fs").promises;
+const { createReadStream } = require("fs");
 const uploadVideo = async (req, res) => {
   try {
     if (!req.file) {
@@ -89,6 +90,8 @@ const trimVideo = async (req, res) => {
   }
 }
 
+
+
 const getVideos = async(req,res)=>{
   try {
     const videos = await prisma.video.findMany();
@@ -152,7 +155,6 @@ const addSubtitles = async (req, res) => {
 
     const srtPath = subtitleFile.path.replace(/\\/g, "/");
     const inputVideoPath = video.path.replace(/\\/g, "/");
-    
 
     const uuid = path.basename(inputVideoPath).split("-").pop().split(".")[0];
     const outputPath = `src/uploads/sub-${uuid}.mp4`;
@@ -160,12 +162,15 @@ const addSubtitles = async (req, res) => {
     ffmpeg(inputVideoPath)
       .outputOptions([
         `-vf subtitles='${srtPath}'`,
-        "-c:v libx264", 
-        "-c:a copy", 
-        "-y", 
+        "-c:v libx264",
+        "-c:a copy",
+        "-y"
       ])
       .output(outputPath)
       .on("end", async () => {
+        await fs.unlink(srtPath);
+
+       
         await prisma.video.update({
           where: { id: videoId },
           data: {
@@ -173,16 +178,96 @@ const addSubtitles = async (req, res) => {
             status: "subtitled",
           },
         });
+
         res.status(200).json({ message: "Subtitles added successfully", outputPath });
       })
-      .on("error", (err) => {
+      .on("error", async (err) => {
+        console.error("FFmpeg subtitle error:", err);
+      
+        await fs.unlink(srtPath).catch(() => {});
         res.status(500).json({ error: "Adding subtitles failed" });
       })
       .run();
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: "Something went wrong" });
   }
 };
 
+const renderFinalVideo = async (req, res) => {
+  const { Id } = req.params;
+  const videoId = parseInt(Id, 10);
 
-module.exports = { uploadVideo, trimVideo,getVideos,deleteAllVideos,deleteVideo,addSubtitles };
+  try {
+    const video = await prisma.video.findUnique({ where: { id: videoId } });
+    if (!video) return res.status(404).json({ error: "Video not found" });
+
+    const inputPath = video.path.replace(/\\/g, "/");
+    const finalFileName = `final-${Date.now()}-${path.basename(video.path)}`;
+    const finalOutputPath = `src/uploads/${finalFileName}`;
+
+    ffmpeg(inputPath)
+      .output(finalOutputPath)
+      .outputOptions([
+        "-c:v libx264", 
+        "-c:a copy",    
+        "-y"           
+      ])
+      .on("end", async () => {
+        await prisma.video.update({
+          where: { id: videoId },
+          data: {
+            path: finalOutputPath,
+            status: "rendered"
+          },
+        });
+
+        res.status(200).json({
+          message: "Final render completed successfully",
+          path: finalOutputPath
+        });
+      })
+      .on("error", (err) => {
+        console.error("Render error:", err);
+        res.status(500).json({ error: "Final render failed" });
+      })
+      .run();
+
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    res.status(500).json({ message: "Something went wrong" });
+  }
+};
+
+const downloadVideo = async (req, res) => {
+  const { Id } = req.params;
+  const videoId = parseInt(Id, 10);
+
+  try {
+    const video = await prisma.video.findUnique({
+      where: { id: videoId }
+    });
+
+    if (!video) {
+      return res.status(404).json({ message: "Video not found" });
+    }
+
+    if (video.status !== "rendered") {
+      return res.status(400).json({ message: "Video is not rendered yet" });
+    }
+
+    const absolutePath = path.resolve(video.path);
+    const fileName = path.basename(absolutePath);
+
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.setHeader("Content-Type", "video/mp4");
+
+    const fileStream = createReadStream(absolutePath);
+    fileStream.pipe(res);
+  } catch (error) {
+    console.error("Download error:", error);
+    res.status(500).json({ message: "Something went wrong during download" });
+  }
+};
+
+module.exports = { uploadVideo, trimVideo,getVideos,deleteAllVideos,deleteVideo,addSubtitles ,renderFinalVideo,downloadVideo};
