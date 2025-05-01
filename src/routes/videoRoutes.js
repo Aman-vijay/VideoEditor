@@ -7,7 +7,7 @@ router.post("/upload",upload.single("video"),uploadVideo)
 
 router.post("/:id/trim", trimVideo)
 
-router.post(":id/subtitles", addSubtitles)
+router.post("/:id/subtitles", addSubtitles)
 
 router.post("/:id/render", renderFinalVideo)
 

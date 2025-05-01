@@ -102,17 +102,13 @@ const addSubtitles = async (req, res) => {
     const srtFilename = `subs-${uuid}.srt`;
     const srtPath = path.join("src", "temp", srtFilename);
 
-    // Save .srt to temp folder
     const writtenSrtPath = convertToSRTAndSave({ subtitles }, srtFilename); 
 
     const outputPath = `src/uploads/sub-${path.basename(video.path)}`;
 
-    console.log("✔ input:", inputVideoPath);
-    console.log("✔ srtPath (for ffmpeg):", srtPath);
-    console.log("✔ output:", outputPath);
 
     ffmpeg(inputVideoPath)
-      .videoFilters(`subtitles=${srtPath.replace(/\\/g, "/")}`) // relative path; avoid quotes
+      .videoFilters(`subtitles=${srtPath.replace(/\\/g, "/")}`) 
       .outputOptions(["-c:v", "libx264", "-c:a", "copy", "-y"])
       .output(outputPath)
       .on("start", cmd => console.log("🎬 FFmpeg started:", cmd))
@@ -125,14 +121,14 @@ const addSubtitles = async (req, res) => {
         res.status(200).json({ message: "Subtitles added", outputPath });
       })
       .on("error", (err) => {
-        console.error("❌ FFmpeg subtitle error:", err.message);
+        console.error(" FFmpeg subtitle error:", err.message);
         if (existsSync(writtenSrtPath)) unlinkSync(writtenSrtPath);
         res.status(500).json({ message: "Subtitle rendering failed", error: err.message });
       })
       .run();
 
   } catch (err) {
-    console.error("❌ Unexpected error:", err);
+    console.error(" Unexpected error:", err);
     res.status(500).json({ message: `Unexpected error: ${err.message}` });
   }
 };
