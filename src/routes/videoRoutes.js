@@ -13,7 +13,7 @@ router.delete("/deleteallvideos", deleteAllVideos)
 
 router.delete("/deletevideo/:Id", deleteVideo)
 
-router.post("/addsubtitles/:Id", upload.single("subtitles"), addSubtitles)
+router.post("/addsubtitles/:Id", addSubtitles)
 
 router.post("/renderfinalvideo/:Id", renderFinalVideo)
 

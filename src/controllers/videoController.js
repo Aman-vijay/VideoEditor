@@ -3,7 +3,8 @@ const prisma = new PrismaClient();
 const { ffmpeg } = require("../configs/ffmpeg");
 const path = require("path");
 const fs = require("fs").promises;
-const { createReadStream } = require("fs");
+const {convertToSRTAndSave} = require("../utils/convertToSrt.js");
+const { createReadStream,existsSync,unlinkSync } = require("fs");
 
 // Helper to fetch video or return 404
 const findVideoOrFail = async (id, res) => {
@@ -84,31 +85,56 @@ try{
 };
 
 const addSubtitles = async (req, res) => {
-  const videoId = parseInt(req.params.Id, 10);
-  const subtitleFile = req.file;
-  if (!subtitleFile) return res.status(400).json({ message: "No subtitle file uploaded" });
+  try {
+    const videoId = parseInt(req.params.Id, 10);
+    const { subtitles } = req.body;
 
-  const video = await findVideoOrFail(videoId, res);
-  if (!video) return;
+    if (isNaN(videoId)) return res.status(400).json({ message: "Invalid video ID" });
+    if (!Array.isArray(subtitles) || subtitles.length === 0) {
+      return res.status(400).json({ message: "Subtitles must be a non-empty array" });
+    }
 
-  const srtPath = subtitleFile.path.replace(/\\/g, "/");
-  const inputVideoPath = video.path.replace(/\\/g, "/");
-  const uuid = path.basename(inputVideoPath).split("-").pop().split(".")[0];
-  const outputPath = `src/uploads/sub-${uuid}.mp4`;
+    const video = await prisma.video.findUnique({ where: { id: videoId } });
+    if (!video) return res.status(404).json({ message: "Video not found" });
 
-  ffmpeg(inputVideoPath)
-    .outputOptions([`-vf subtitles='${srtPath}'`, "-c:v libx264", "-c:a copy", "-y"])
-    .output(outputPath)
-    .on("end", async () => {
-      await fs.unlink(srtPath);
-      await prisma.video.update({ where: { id: videoId }, data: { path: outputPath, status: "subtitled" } });
-      res.status(200).json({ message: "Subtitles added", outputPath });
-    })
-    .on("error", async () => {
-      await fs.unlink(srtPath).catch(() => {});
-      res.status(500).json({ error: "Subtitle processing failed" });
-    })
-    .run();
+    const inputVideoPath = video.path; 
+    const uuid = path.basename(video.path, path.extname(video.path)).replace(/^.*-/, "");
+    const srtFilename = `subs-${uuid}.srt`;
+    const srtPath = path.join("src", "temp", srtFilename);
+
+    // Save .srt to temp folder
+    const writtenSrtPath = convertToSRTAndSave({ subtitles }, srtFilename); 
+
+    const outputPath = `src/uploads/sub-${path.basename(video.path)}`;
+
+    console.log("✔ input:", inputVideoPath);
+    console.log("✔ srtPath (for ffmpeg):", srtPath);
+    console.log("✔ output:", outputPath);
+
+    ffmpeg(inputVideoPath)
+      .videoFilters(`subtitles=${srtPath.replace(/\\/g, "/")}`) // relative path; avoid quotes
+      .outputOptions(["-c:v", "libx264", "-c:a", "copy", "-y"])
+      .output(outputPath)
+      .on("start", cmd => console.log("🎬 FFmpeg started:", cmd))
+      .on("end", async () => {
+        if (existsSync(writtenSrtPath)) unlinkSync(writtenSrtPath);
+        await prisma.video.update({
+          where: { id: videoId },
+          data: { path: outputPath, status: "subtitled" }
+        });
+        res.status(200).json({ message: "Subtitles added", outputPath });
+      })
+      .on("error", (err) => {
+        console.error("❌ FFmpeg subtitle error:", err.message);
+        if (existsSync(writtenSrtPath)) unlinkSync(writtenSrtPath);
+        res.status(500).json({ message: "Subtitle rendering failed", error: err.message });
+      })
+      .run();
+
+  } catch (err) {
+    console.error("❌ Unexpected error:", err);
+    res.status(500).json({ message: `Unexpected error: ${err.message}` });
+  }
 };
 
 const renderFinalVideo = async (req, res) => {
