@@ -5,17 +5,20 @@ const router = express.Router()
 
 router.post("/upload",upload.single("video"),uploadVideo)
 
-router.post("/trim/:Id", trimVideo)
+router.post("/:id/trim", trimVideo)
+
+router.post(":id/subtitles", addSubtitles)
+
+router.post("/:id/render", renderFinalVideo)
+
+router.get("/:id/download", downloadVideo)
 
 router.get("/getvideos", getVideos)
 
 router.delete("/deleteallvideos", deleteAllVideos)
 
-router.delete("/deletevideo/:Id", deleteVideo)
+router.delete("/:id/deleteById", deleteVideo)
 
-router.post("/addsubtitles/:Id", addSubtitles)
 
-router.post("/renderfinalvideo/:Id", renderFinalVideo)
 
-router.get("/downloadvideo/:Id", downloadVideo)
 module.exports = router

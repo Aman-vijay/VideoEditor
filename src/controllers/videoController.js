@@ -52,7 +52,7 @@ const trimVideo = async (req, res) => {
     return hours * 3600 + minutes * 60 + seconds;
   }
   const { startTime, endTime } = req.body;
-  const videoId = parseInt(req.params.Id, 10);
+  const videoId = parseInt(req.params.id, 10);
 
   const video = await findVideoOrFail(videoId, res);
   if (!video) return;
@@ -86,7 +86,7 @@ try{
 
 const addSubtitles = async (req, res) => {
   try {
-    const videoId = parseInt(req.params.Id, 10);
+    const videoId = parseInt(req.params.id, 10);
     const { subtitles } = req.body;
 
     if (isNaN(videoId)) return res.status(400).json({ message: "Invalid video ID" });
@@ -138,7 +138,7 @@ const addSubtitles = async (req, res) => {
 };
 
 const renderFinalVideo = async (req, res) => {
-  const videoId = parseInt(req.params.Id, 10);
+  const videoId = parseInt(req.params.id, 10);
   const video = await findVideoOrFail(videoId, res);
   if (!video) return;
 
@@ -158,7 +158,7 @@ const renderFinalVideo = async (req, res) => {
 };
 
 const downloadVideo = async (req, res) => {
-  const videoId = parseInt(req.params.Id, 10);
+  const videoId = parseInt(req.params.id, 10);
   const video = await findVideoOrFail(videoId, res);
   if (!video) return;
 
@@ -184,7 +184,7 @@ const getVideos = async (req, res) => {
 };
 
 const deleteVideo = async (req, res) => {
-  const videoId = parseInt(req.params.Id, 10);
+  const videoId = parseInt(req.params.id, 10);
   const video = await findVideoOrFail(videoId, res);
   if (!video) return;
 
