@@ -5,6 +5,8 @@ const path = require("path");
 const fs = require("fs").promises;
 const {convertToSRTAndSave} = require("../utils/convertToSrt.js");
 const { createReadStream,existsSync,unlinkSync } = require("fs");
+const {videoQueue} = require("../jobs/videoQueue");
+
 
 // Helper to fetch video or return 404
 const findVideoOrFail = async (id, res) => {
@@ -46,43 +48,29 @@ const uploadVideo = async (req, res) => {
 };
 
 const trimVideo = async (req, res) => {
-
-  const parseTimetoSeconds = (time) => {
-    const[hours, minutes, seconds] = time.split(":").map(Number);
-    return hours * 3600 + minutes * 60 + seconds;
-  }
   const { startTime, endTime } = req.body;
   const videoId = parseInt(req.params.id, 10);
 
   const video = await findVideoOrFail(videoId, res);
   if (!video) return;
-try{
-      const startSeconds = parseTimetoSeconds(startTime);
-    const endSeconds = parseTimetoSeconds(endTime);
 
-    const duration = endSeconds - startSeconds;
-    if (duration <= 0) return res.status(400).json({ message: "Invalid time range" });
-    
-    const outputPath = `src/uploads/trimmed-${path.basename(video.path)}`;
-    const trimmedSize = parseFloat((video.size * duration / video.duration).toFixed(2));
-  ffmpeg(video.path)
-    .setStartTime(startSeconds)
-    .setDuration(duration)
-    .output(outputPath)
-    .on("end", async () => {
-      await prisma.video.update({
-        where: { id: videoId },
-        data: { path: outputPath, duration, size: trimmedSize, status: "trimmed" },
-      });
-      res.status(200).json({ message: "Trimmed successfully", outputPath });
-    })
-    .on("error", () => res.status(500).json({ error: "Trimming failed" }))
-    .run();
-  }catch (error) {
-    console.error("Error during trimming:", error);
-    res.status(500).json({ message: "Error during trimming" });
+  try {
+    await videoQueue.add("trim", {
+      type: "trim",
+      data: {
+        videoId,
+        startTime,
+        endTime,
+      },
+    });
+
+    res.status(202).json({ message: "Trim job queued" });
+  } catch (err) {
+    console.error("Queue error:", err);
+    res.status(500).json({ message: "Failed to queue trim job" });
   }
 };
+
 
 const addSubtitles = async (req, res) => {
   try {
@@ -94,38 +82,15 @@ const addSubtitles = async (req, res) => {
       return res.status(400).json({ message: "Subtitles must be a non-empty array" });
     }
 
-    const video = await prisma.video.findUnique({ where: { id: videoId } });
-    if (!video) return res.status(404).json({ message: "Video not found" });
+   await videoQueue.add("subtitles", {
+      type: "subtitles",
+      data: {
+        videoId,
+        subtitles,
+      },
+    });
 
-    const inputVideoPath = video.path; 
-    const uuid = path.basename(video.path, path.extname(video.path)).replace(/^.*-/, "");
-    const srtFilename = `subs-${uuid}.srt`;
-    const srtPath = path.join("src", "temp", srtFilename);
-
-    const writtenSrtPath = convertToSRTAndSave({ subtitles }, srtFilename); 
-
-    const outputPath = `src/uploads/sub-${path.basename(video.path)}`;
-
-
-    ffmpeg(inputVideoPath)
-      .videoFilters(`subtitles=${srtPath.replace(/\\/g, "/")}`) 
-      .outputOptions(["-c:v", "libx264", "-c:a", "copy", "-y"])
-      .output(outputPath)
-      .on("start", cmd => console.log("🎬 FFmpeg started:", cmd))
-      .on("end", async () => {
-        if (existsSync(writtenSrtPath)) unlinkSync(writtenSrtPath);
-        await prisma.video.update({
-          where: { id: videoId },
-          data: { path: outputPath, status: "subtitled" }
-        });
-        res.status(200).json({ message: "Subtitles added", outputPath });
-      })
-      .on("error", (err) => {
-        console.error(" FFmpeg subtitle error:", err.message);
-        if (existsSync(writtenSrtPath)) unlinkSync(writtenSrtPath);
-        res.status(500).json({ message: "Subtitle rendering failed", error: err.message });
-      })
-      .run();
+    res.status(202).json({ message: "Subtitle job queued" });
 
   } catch (err) {
     console.error(" Unexpected error:", err);
@@ -137,20 +102,19 @@ const renderFinalVideo = async (req, res) => {
   const videoId = parseInt(req.params.id, 10);
   const video = await findVideoOrFail(videoId, res);
   if (!video) return;
+ try {
+    await videoQueue.add("render", {
+      type: "render",
+      data: {
+        videoId,
+      },
+    });
 
-  const inputPath = video.path.replace(/\\/g, "/");
-  const finalFileName = `final-${Date.now()}-${path.basename(video.path)}`;
-  const finalOutputPath = `src/uploads/${finalFileName}`;
-
-  ffmpeg(inputPath)
-    .output(finalOutputPath)
-    .outputOptions(["-c:v libx264", "-c:a copy", "-y"])
-    .on("end", async () => {
-      await prisma.video.update({ where: { id: videoId }, data: { path: finalOutputPath, status: "rendered" } });
-      res.status(200).json({ message: "Final render complete", path: finalOutputPath });
-    })
-    .on("error", () => res.status(500).json({ error: "Render failed" }))
-    .run();
+    res.status(202).json({ message: "Render job queued" });
+  } catch (err) {
+    console.error("Queue error:", err);
+    res.status(500).json({ message: "Failed to queue render job" });
+  }
 };
 
 const downloadVideo = async (req, res) => {
