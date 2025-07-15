@@ -2,7 +2,6 @@
 # VideoEditor
 
 A simple video editing service using Node.js, Prisma, and FFmpeg. This application allows users to upload, trim, add subtitles, render final videos, and download them. All video data is stored in a PostgreSQL database and managed through Prisma.
-This is demo project assignment for MOVE 37 PRODUCTIONS
 
 
 
